@@ -1,6 +1,7 @@
 import sys
 import webbrowser
 from pathlib import Path
+from string import ascii_letters
 
 import pafy
 import music_tag
@@ -90,41 +91,6 @@ class MusicFetcher:
             f[kwarg] = value
         return mp3path
 
-    def _search(self, limit: int=5):
-        """Filtered Youtube Music Search
-
-        Keyword arguments:
-        limit -- number of search results
-        Return: dictionary of results
-        """
-        search = lambda x, y: self.ytm.search(x, filter=y)
-
-        opts = ['1. Songs', '2. Artists', '3. Albums']
-        df = pd.DataFrame({"Options": opts})
-        print(df.to_markdown(index=False))
-        opt = input("Please Enter Option #: ").strip()
-        if opt.isalnum() and abs(int(opt))-1 <= len(opts):
-            opt = abs(int(opt))-1
-        else:
-            response = tryAgain(STRINGS['invalid_tryagain'])
-            if response == 'y':
-                return self._search(limit)
-            else:
-                sys.exit()
-        fltr = opts[opt].split(". ")[-1].lower()
-        qry = input(f'Enter {fltr.title()[:-1]}: ').strip()
-        if not qry:
-            print('A search for nothing might yield everything.')
-            sys.exit()
-        results = search(qry, fltr)
-        if not results:
-            response = tryAgain('Search yielded 0 results. Try Again? [Y/n]: ')
-            if response == 'y':
-                return self._search(limit)
-            else:
-                sys.exit()
-        return pd.DataFrame(results)
-
     def _parse(self, df: pd.DataFrame):
         """Parse search results & offer listening choices
 
@@ -204,17 +170,58 @@ class MusicFetcher:
                 tryAgain(STRINGS['invalid_tryagain']) == 'y' else sys.exit()
         return (opts[opt], hidden_df[hidden_df.index==sel].copy()) # result param
 
-    def _download(self, action_type: str, hidden_df: pd.DataFrame, file_path: Path):
+    def search(self, limit: int=5):
+        """Filtered Youtube Music Search
+
+        Keyword arguments:
+        limit -- number of search results
+        Return: dictionary of results
+        """
+        search = lambda x, y: self.ytm.search(x, filter=y)
+
+        opts = ['1. Songs', '2. Artists', '3. Albums']
+        df = pd.DataFrame({"Options": opts})
+        print(df.to_markdown(index=False))
+        opt = input("Please Enter Option #: ").strip()
+        if opt.isalnum() and abs(int(opt))-1 <= len(opts):
+            opt = abs(int(opt))-1
+        else:
+            response = tryAgain(STRINGS['invalid_tryagain'])
+            if response == 'y':
+                return self._search(limit)
+            else:
+                sys.exit()
+        fltr = opts[opt].split(". ")[-1].lower()
+        qry = input(f'Enter {fltr.title()[:-1]}: ').strip()
+        if not qry:
+            print('A search for nothing might yield everything.')
+            sys.exit()
+        results = search(qry, fltr)
+        if not results:
+            response = tryAgain('Search yielded 0 results. Try Again? [Y/n]: ')
+            if response == 'y':
+                return self._search(limit)
+            else:
+                sys.exit()
+        return pd.DataFrame(results)
+
+    def download(self, action_type: str, hidden_df: pd.DataFrame):
+        file_path = Path(self._download_dir,
+                        ''.join(char for char in hidden_df['title'] \
+                            if char in ascii_letters))
         video = pafy.new(hidden_df['videoId'][0])
         if action_type == 'download':
             stream = video.getbestaudio()
-            file_path = stream.download(file_path=file_path)
+            file_path = Path(f'{file_path}.{stream.extension}')
+            file_path = stream.download(file_path)
         if action_type == 'tag':
+            m4a_path = Path(f'{file_path}.m4a')
+            file_path = Path(f'{file_path}.mp3')
             for i, audio in enumerate(video.audiostreams()[::-1]):
-                if audio.name == "m4a":
-                    file_path = video.audiostreams[i].dowload(file_path=file_path)
-                    audio_in = file_path
-                    audio_out = '.'.join(file_path.split('.')[:-1] + ['.mp3'])
+                if audio.extension == "m4a":
+                    m4a_path = video.audiostreams[i].dowload(m4a_path)
+                    audio_in = m4a_path
+                    audio_out = file_path
                     audio_out = self.ff(audio_in, audio_out)
                     file_path.unlink()
                     file_path = audio_out
@@ -222,8 +229,8 @@ class MusicFetcher:
             kwargs = {}
             for key in hidden_df.columns.names().to_list():
                 kwargs[key] = hidden_df[key][0]
-            mp3 = self.tag(file_path, kwargs)
-        return mp3
+            file_path = self.tag(file_path, kwargs)
+        return file_path
 
     def fetch(self):
         df = self.ytMusicSearch()
@@ -235,11 +242,8 @@ class MusicFetcher:
             self.browse(action_type, hidden_df)
         elif action_type == 'listen':
             self.listen(action_type, hidden_df)
-        elif action_type == 'tag':
-            mp3path = self.download(action_type, hidden_df)
-            self.tag(mp3path)
-        elif action_type == 'download':
-            self._download(action_type, hidden_df, self._download_dir)
+        elif action_type in ['download', 'tag']:
+            self.download(action_type, hidden_df)
 
 
 if __name__ == "__main__":
