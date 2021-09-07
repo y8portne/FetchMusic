@@ -250,5 +250,5 @@ if __name__ == "__main__":
     homeMusicDir = Path(Path.home(), 'Music')
     if not homeMusicDir.exists():
         homeMusicDir.mkdir()
-    syne = MusicFetcher(path=homeMusicDir)
+    syne = MusicFetcher(download_dir=homeMusicDir)
     syne.fetch()
