@@ -106,7 +106,7 @@ class MusicFetcher:
                 'display': ['artist'],
                 'hidden': ['shuffleId', 'radioId', 'browseId', 'thumbnails']},
             'album': {
-                'display': ['title', 'type', 'year', 'isExplicit'],
+                'display': ['title', 'type', 'year', 'artists', 'isExplicit'],
                 'hidden': ['browseId', 'thumbnails']}
         }
         opts = {
@@ -124,38 +124,38 @@ class MusicFetcher:
         idx = df.index.to_list()
         idx.append(idx[-1]+1)
         idx = idx[1:]
-        fltr = df[df.columns[0]][0]
-        display_df = df[columns[fltr]['display']].copy()
+        record_type = df[df.columns[0]][0]
+        display_df = df[columns[record_type]['display']].copy()
         display_df.index = idx # reset to 1-based index
-        # Split the artist field from albums filter
-        if fltr == 'albums':
-            artist_id = display_df['artists'].to_list()
-        artists, artist_ids = [], []
-        for combo in artist_id:
-            artists.append(combo.key())
-            artist_ids.append(combo.value())
-        display_df['artists'] = artists
-        # Split the album field from songs filter
-        if fltr == 'songs':
-            album_id = display_df['album'].to_list()
-        albums, album_ids = [], []
-        for combo in album_id:
-            albums.append(combo.key)
-            album_ids.append(combo.value())
-        display_df['album'] = albums
-        # Ids are added to hidden_df
-        hidden_df = df[columns[fltr]['hidden']].copy()
+        hidden_df = df[columns[record_type]['hidden']].copy()
         hidden_df.index = idx
-        if fltr == 'artists':
-            hidden_df['artist_ids'] = artist_ids
-        if fltr == 'albums':
-            hidden_df['album_']
-        hidden_df['album_ids'] = album_ids
-        del artists, albums, artist_ids, album_ids # ~ loop
+        # Split combo label and id fields
+        if 'album' in display_df.columns():
+            albums_and_ids = display_df['album'].to_list()
+            album, album_id = [], []
+            for dct in albums_and_ids:
+                album.append(dct['name'])
+                album_id.append(dct['id'])
+            display_df['album'] = album
+            hidden_df['album'] = album
+            hidden_df['album_id'] = album_id
+            del albums_and_ids, album, album_id
+        if 'artists' in display_df.columns():
+            artists_and_ids = []
+            for lst in display_df['artists'].to_list():
+                artists_and_ids.append(lst[0])
+            artist, artist_id = [], []
+            for dct in artists_and_ids:
+                artist.append(dct['name'])
+                artist_id.append(dct['id'])
+            display_df['artist'] = artist
+            hidden_df['artist'] = artist
+            hidden_df['artist_id'] = artist_id
+            del artists_and_ids, artist, artist_id
         # User selections
         print(display_df.to_markdown())
         sel = input('Please Enter Result #: ').strip()
-        opts = pd.DataFrame({'Options': opts[fltr]})
+        opts = pd.DataFrame({'Options': opts[record_type]})
         print(opts.to_markdown(index=False))
         opt = input('Please Enter Option #: ').strip()
         if sel.isalnum() and abs(int(sel))-1 <= len(display_df):
@@ -168,7 +168,7 @@ class MusicFetcher:
         else:
             return self._parse(df) if \
                 tryAgain(STRINGS['invalid_tryagain']) == 'y' else sys.exit()
-        return (opts[opt], hidden_df[hidden_df.index==sel].copy()) # result param
+        return [opts[opt], hidden_df[hidden_df.index==sel].copy()]
 
     def search(self, limit: int=5):
         """Filtered Youtube Music Search
@@ -236,8 +236,8 @@ class MusicFetcher:
         df = self.ytMusicSearch()
         result = self._parse(df)
         action = self.determine_action(result)
-        action_type = action(0)
-        hidden_df = action(1)
+        action_type = action[0]
+        hidden_df = action[1]
         if action_type == 'browse':
             self.browse(action_type, hidden_df)
         elif action_type == 'listen':
