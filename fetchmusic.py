@@ -1,7 +1,9 @@
+import os
 import sys
 import webbrowser
 from pathlib import Path
 from string import ascii_letters
+from numpy import histogramdd
 
 import pafy
 import music_tag
@@ -59,37 +61,38 @@ class MusicFetcher:
         self._download_dir = value
 
     @staticmethod
-    def determine_action(result: tuple):
-        action = ["verb", "noun"]
-        for verb in ['browse', 'listen', 'archive', 'download', 'download & tag', 'share']:
-            if verb.title() in result[0]:
-                action[0] = list(verb)[-1]
-        for noun in ['song', 'shuffle', 'radio', 'artist', 'album']:
-            if noun.title() in result[0]:
-                action[1] = noun
-        return action
+    def determine_action(requested_action: str):
+        requested_action = requested_action.lower()
+        if 'listen' in requested_action:
+            for listen_type in ['song', 'shuffle', 'radio']:
+                if listen_type in requested_action:
+                    return ('listen', listen_type)
+        elif 'browse' in requested_action:
+            for browse_type in ['artist', 'album']:
+                if browse_type in requested_action:
+                    return ('browse', browse_type)
+        elif 'download' in requested_action:
+            if 'tag' in requested_action:
+                return ('download', 'tag')
+            else:
+                return ('download', 'download')
 
     @staticmethod
-    def browse(action_type: str, hidden_df: pd.DataFrame, urlonly: bool=False):
+    def browse(df: pd.DataFrame):
         baseurl = "https://music.youtube.com/channel/"
-        url = baseurl + hidden_df['browseId'][0]
+        url = baseurl + df['browseId'].to_list()[0]
         webbrowser.open(url)
 
     @staticmethod
-    def listen(action_type: str, hidden_df: pd.DataFrame):
-        baseurl = "https://music.youtube.com/watch?video="
+    def listen(action_type: str, df: pd.DataFrame):
+        baseurl = "https://music.youtube.com/watch?"
         if action_type == 'song':
-            url = baseurl + 'v=' + hidden_df['videoId'][0]
-        elif action_type in ['shuffle', 'radio']:
-            url = baseurl + 'list=' + hidden_df[f'{action_type}Id'][0]
+            url = baseurl + 'v=' + df['videoId'].to_list()[0]
+        elif action_type == 'shuffle':
+            url = baseurl + 'list=' + df['shuffleId'].to_list()[0]
+        elif action_type == 'radio':
+            url = baseurl + 'list=' + df['radioId'].to_list()[0]
         webbrowser.open(url)
-
-    @staticmethod
-    def tag(mp3path: Path, **kwargs):
-        f = music_tag.load_file(mp3path)
-        for kwarg, value in kwargs.items():
-            f[kwarg] = value
-        return mp3path
 
     def _parse(self, df: pd.DataFrame):
         """Parse search results & offer listening choices
@@ -107,20 +110,18 @@ class MusicFetcher:
                 'hidden': ['shuffleId', 'radioId', 'browseId', 'thumbnails']},
             'album': {
                 'display': ['title', 'type', 'year', 'artists', 'isExplicit'],
-                'hidden': ['browseId', 'thumbnails']}
-        }
+                'hidden': ['browseId', 'thumbnails']}}
         opts = {
             'song': [
                 '1. Listen to Song on YouTube Music.',
-                '3. Download Song (best format).',
-                '4. Download & Tag Song as MP3.'],
+                '2. Download Song (best format).',
+                '3. Download & Tag Song as MP3.'],
             'artist': [
                 '1. Browse Artist on YouTube Music.',
                 '2. Listen to Shuffle on YouTube Music.',
-                '6. Listen to Radio on YouTube Music.'],
+                '3. Listen to Radio on YouTube Music.'],
             'album': [
-                '1. Browse Album on YouTube Music.']
-        }
+                '1. Browse Album on YouTube Music.']}
         idx = df.index.to_list()
         idx.append(idx[-1]+1)
         idx = idx[1:]
@@ -130,7 +131,7 @@ class MusicFetcher:
         hidden_df = df[columns[record_type]['hidden']].copy()
         hidden_df.index = idx
         # Split combo label and id fields
-        if 'album' in display_df.columns():
+        if 'album' in display_df.columns:
             albums_and_ids = display_df['album'].to_list()
             album, album_id = [], []
             for dct in albums_and_ids:
@@ -140,7 +141,7 @@ class MusicFetcher:
             hidden_df['album'] = album
             hidden_df['album_id'] = album_id
             del albums_and_ids, album, album_id
-        if 'artists' in display_df.columns():
+        if 'artists' in display_df.columns:
             artists_and_ids = []
             for lst in display_df['artists'].to_list():
                 artists_and_ids.append(lst[0])
@@ -148,27 +149,21 @@ class MusicFetcher:
             for dct in artists_and_ids:
                 artist.append(dct['name'])
                 artist_id.append(dct['id'])
-            display_df['artist'] = artist
+            display_df['artists'] = artist
             hidden_df['artist'] = artist
             hidden_df['artist_id'] = artist_id
             del artists_and_ids, artist, artist_id
         # User selections
-        print(display_df.to_markdown())
-        sel = input('Please Enter Result #: ').strip()
-        opts = pd.DataFrame({'Options': opts[record_type]})
-        print(opts.to_markdown(index=False))
-        opt = input('Please Enter Option #: ').strip()
-        if sel.isalnum() and abs(int(sel))-1 <= len(display_df):
-            sel = abs(int(sel))
-        else:
+        try:
+            print(display_df.to_markdown())
+            sel = int(input('Please Enter Result #: ').strip())
+            opts = pd.DataFrame({'Options': opts[record_type]})
+            print(opts.to_markdown(index=False))
+            opt = int(input('Please Enter Option #: ').strip()) - 1
+        except:
             return self._parse(df) if \
                 tryAgain(STRINGS['invalid_tryagain']) == 'y' else sys.exit()
-        if opt.isalnum() and abs(int(opt))-1 <= len(display_df):
-            opt = abs(int(opt))-1
-        else:
-            return self._parse(df) if \
-                tryAgain(STRINGS['invalid_tryagain']) == 'y' else sys.exit()
-        return [opts[opt], hidden_df[hidden_df.index==sel].copy()]
+        return  (opts['Options'].to_list()[opt], hidden_df[hidden_df.index==sel].copy())
 
     def search(self, limit: int=5):
         """Filtered Youtube Music Search
@@ -203,47 +198,48 @@ class MusicFetcher:
                 return self._search(limit)
             else:
                 sys.exit()
-        return pd.DataFrame(results)
+        return pd.DataFrame(results[:limit+1])
 
-    def download(self, action_type: str, hidden_df: pd.DataFrame):
-        file_path = Path(self._download_dir,
-                        ''.join(char for char in hidden_df['title'] \
-                            if char in ascii_letters))
-        video = pafy.new(hidden_df['videoId'][0])
+    def download(self, action_type: str, df: pd.DataFrame):
+        title = df['title'].to_list()[0]
+        filename = ''.join([char for char in title if char in ascii_letters])
+        video = pafy.new(df['videoId'].to_list()[0])
         if action_type == 'download':
             stream = video.getbestaudio()
-            file_path = Path(f'{file_path}.{stream.extension}')
-            file_path = stream.download(file_path)
+            filename = filename + '.' + stream.extension
+            download_path = Path(self.download_dir, filename)
+            stream.download(str(download_path))
         if action_type == 'tag':
-            m4a_path = Path(f'{file_path}.m4a')
-            file_path = Path(f'{file_path}.mp3')
-            for i, audio in enumerate(video.audiostreams()[::-1]):
+            mp3file = filename + '.' + 'mp3'
+            for audio in video.audiostreams[::-1]:
                 if audio.extension == "m4a":
-                    m4a_path = video.audiostreams[i].dowload(m4a_path)
-                    audio_in = m4a_path
-                    audio_out = file_path
-                    audio_out = self.ff(audio_in, audio_out)
-                    file_path.unlink()
-                    file_path = audio_out
-                    del audio_out
-            kwargs = {}
-            for key in hidden_df.columns.names().to_list():
-                kwargs[key] = hidden_df[key][0]
-            file_path = self.tag(file_path, kwargs)
-        return file_path
+                    m4afile = filename + '.' + audio.extension
+                    audio_in = Path(self.download_dir, m4afile)
+                    audio.download(str(audio_in))
+                    audio_out = Path(self.download_dir, mp3file)
+                    download_path = self.ff.convert(str(audio_in), str(audio_out))
+                    os.remove(audio_in)
+                    del mp3file, m4afile, audio_in, audio_out
+                    break
+            f = music_tag.load_file(download_path)
+            f['Name'] = df['title'].to_list()[0]
+            f['Artist'] = df['artist'].to_list()[0]
+            f['Album'] = df['album'].to_list()[0]
+        return download_path
 
     def fetch(self):
-        df = self.ytMusicSearch()
-        result = self._parse(df)
-        action = self.determine_action(result)
-        action_type = action[0]
-        hidden_df = action[1]
-        if action_type == 'browse':
-            self.browse(action_type, hidden_df)
-        elif action_type == 'listen':
-            self.listen(action_type, hidden_df)
-        elif action_type in ['download', 'tag']:
-            self.download(action_type, hidden_df)
+        df = self.search()
+        action, df = self._parse(df)
+        action, action_type = self.determine_action(action)
+        if action:
+            if action == 'browse':
+                self.browse(df)
+            elif action == 'listen':
+                self.listen(action_type, df)
+            elif action in ['download', 'tag']:
+                self.download(action_type, df)
+        else:
+            print()
 
 
 if __name__ == "__main__":
