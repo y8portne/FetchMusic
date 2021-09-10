@@ -6,7 +6,7 @@ from string import ascii_letters
 from numpy import histogramdd
 
 import pafy
-import music_tag
+import eyed3
 import pandas as pd
 from pyffmpeg import FFmpeg
 from ytmusicapi import YTMusic
@@ -221,10 +221,12 @@ class MusicFetcher:
                     os.remove(audio_in)
                     del mp3file, m4afile, audio_in, audio_out
                     break
-            f = music_tag.load_file(download_path)
-            f['Name'] = df['title'].to_list()[0]
-            f['Artist'] = df['artist'].to_list()[0]
-            f['Album'] = df['album'].to_list()[0]
+            mp3file = eyed3.load(download_path)
+            mp3file.tag.title = df['title'].to_list()[0]
+            mp3file.tag.artist = df['artist'].to_list()[0]
+            mp3file.tag.album = df['album'].to_list()[0]['name']
+            mp3file.tag.comment = df['videoId'].to_list()[0]
+            mp3file.tag.save()
         return download_path
 
     def fetch(self):
