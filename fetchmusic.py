@@ -3,7 +3,6 @@ import sys
 import webbrowser
 from pathlib import Path
 from string import ascii_letters
-from numpy import histogramdd
 
 import pafy
 import eyed3
