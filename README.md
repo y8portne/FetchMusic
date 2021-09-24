@@ -10,7 +10,9 @@ No API key needed!
 # To install:
 
 git clone https://github.com/yportne8/FetchMusic
+
 cd FetchMusic
+
 python install -r requirements.txt
 
 
