@@ -7,7 +7,7 @@ No API key needed!
 
 
 
-# To install:
+## To install:
 
 git clone https://github.com/yportne8/FetchMusic
 
@@ -17,6 +17,6 @@ python install -r requirements.txt
 
 
 
-# To Run:
+## To Run:
 
 python fetchmusic.py
