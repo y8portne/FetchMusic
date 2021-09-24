@@ -13,7 +13,7 @@ git clone https://github.com/yportne8/FetchMusic
 
 cd FetchMusic
 
-python install -r requirements.txt
+pip install -r requirements.txt
 
 
 
